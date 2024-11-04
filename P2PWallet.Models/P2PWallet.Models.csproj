@@ -1,0 +1,10 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <BaseOutputPath>C:\Users\bamidelemusibau\source\repos\P2PWallet.Models\bin\Debug\net8.0</BaseOutputPath>
+  </PropertyGroup>
+
+</Project>

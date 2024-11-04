@@ -1,0 +1,6 @@
+@P2PWALLET_HostAddress = http://localhost:5147
+
+GET {{P2PWALLET_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
