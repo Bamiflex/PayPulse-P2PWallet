@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using P2PWallet.Models.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Schema;
+using Microsoft.EntityFrameworkCore;
 
 namespace P2PWallet.Services.Services
 {
@@ -17,47 +18,47 @@ namespace P2PWallet.Services.Services
     {
         private readonly HttpClient _httpClient;
         private readonly string _paystackSecretKey;
+        private readonly P2PWalletDbContext _dbContext;
 
-        public PaystackService(HttpClient httpClient, IConfiguration configuration)
+
+        public PaystackService(HttpClient httpClient, IConfiguration configuration, P2PWalletDbContext dbContext)
         {
             _httpClient = httpClient;
             _paystackSecretKey = configuration["Paystack:SecretKey"];
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _paystackSecretKey);
+            _dbContext = dbContext;
         }
 
 
 
-            public async Task<string> InitializePayment(decimal amount, string email, string reference)
-            {
+        public async Task<string> InitializePayment(decimal amount, string email, string reference)
+        {
 
-            
+
             var requestBody = new
-                {
-                    amount = (int)(amount * 100),
-                    email,
-                    reference,
-                    currency = "NGN"
-                };
+            {
+                amount = (int)(amount * 100),
+                email,
+                reference,
+                currency = "NGN"
+            };
 
-                var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
-
-            // Set up the request headers
-           // _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _paystackSecretKey);
+            var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
 
 
             var response = await _httpClient.PostAsync("https://api.paystack.co/transaction/initialize", content);
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorResponse = await response.Content.ReadAsStringAsync();
-                    throw new Exception($"Failed to initialize payment with Paystack. Response: {errorResponse}");
-                }
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorResponse = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to initialize payment with Paystack. Response: {errorResponse}");
+            }
 
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var jsonResponse = JsonConvert.DeserializeObject<PaystackVerificationResponse>(responseContent);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            var jsonResponse = JsonConvert.DeserializeObject<PaystackVerificationResponse>(responseContent);
 
 
 
-                if (jsonResponse != null && jsonResponse.status == "true")
+            if (jsonResponse != null && jsonResponse.status == "true")
             {
                 var paymentUrl = jsonResponse.data?.authorization_url;
                 return paymentUrl ?? throw new Exception("Payment URL not found in response.");
@@ -67,6 +68,23 @@ namespace P2PWallet.Services.Services
                 throw new Exception($"Error from Paystack: {jsonResponse?.message}");
             }
         }
+
+
+        public async Task<bool> UpdateTransactionStatus(string reference, string status)
+        {
+            var transaction = await _dbContext.Transactions.FirstOrDefaultAsync(t => t.ExternalTransactionId == reference);
+
+            if (transaction == null)
+            {
+                throw new InvalidOperationException("Transaction not found.");
+            }
+
+            transaction.Status = status;
+            await _dbContext.SaveChangesAsync();
+            return true;
+        }
+
+
 
         public async Task<(bool isSuccessful, decimal amount)> VerifyPayment(string reference)
         {
@@ -88,6 +106,8 @@ namespace P2PWallet.Services.Services
 
             return (false, 0);
         }
+
+
 
     }
 }

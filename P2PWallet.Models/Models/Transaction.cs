@@ -11,17 +11,18 @@ namespace P2PWallet.Models
         public int Id { get; set; }
 
         [Required]
-        public string AccountNumber { get; set; } // Associate with user's account
+        [StringLength(20)] 
+        public string AccountNumber { get; set; }
 
         [Required]
-        public DateTime Date { get; set; } = DateTime.Now; // Date and time of the transaction with a default value
+        public DateTime Date { get; set; } = DateTime.Now;
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal Amount { get; set; }
 
         [Required]
-        public string Type { get; set; }
+        public TransactionType Type { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
@@ -32,7 +33,19 @@ namespace P2PWallet.Models
         [Required]
         public int AccountId { get; set; }
 
-        // Navigation property to Account
+
+        [Required]
+        [StringLength(10)] // To store values like "Pending", "Success", "Failed"
+        public string Status { get; set; } = "Pending";
+
+        public string ExternalTransactionId { get; set; }
+
         public virtual Account Account { get; set; }
+    }
+
+    public enum TransactionType
+    {
+        Credit,
+        Debit
     }
 }

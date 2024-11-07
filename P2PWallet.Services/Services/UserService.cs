@@ -1,12 +1,15 @@
 ﻿
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using P2PWallet.Models;
 using P2PWallet.Services;
 using System;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using static P2PWallet.Models.Models.PaystackVerificationResponse;
 
 namespace P2PWallet.Services
 {
@@ -70,6 +73,28 @@ namespace P2PWallet.Services
         }
 
 
+        public async Task CreateTransactionAsync(Transaction transaction)
+        {
+            _dbContext.Transactions.Add(transaction);
+            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task UpdateTransactionStatus(string transactionReference, string status)
+        {
+            var transaction = await _dbContext.Transactions
+                .FirstOrDefaultAsync(t => t.ExternalTransactionId == transactionReference);
+
+            if (transaction == null)
+            {
+                throw new InvalidOperationException("Transaction not found.");
+            }
+
+            transaction.Status = status;
+
+            await _dbContext.SaveChangesAsync();
+        }
+
+
         private (byte[] passwordHash, byte[] passwordSalt) HashPassword(string password)
         {
             using (var hmac = new HMACSHA512())
@@ -79,6 +104,8 @@ namespace P2PWallet.Services
                 return (hash, salt);
             }
         }
+
+
 
         public async Task<Account> CreateAccountAsync(int userId)
         {
@@ -99,6 +126,8 @@ namespace P2PWallet.Services
         }
 
         public async Task<bool> SetTransactionPinAsync(int userId, string transactionPin)
+
+
         {
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
@@ -117,14 +146,12 @@ namespace P2PWallet.Services
 
         public async Task<string> GetAccountNameByAccountNumberAsync(string accountNumber)
         {
-            // Assuming you have an Account model with properties `AccountNumber` and `User`
             var account = await _context.Accounts
                 .Include(a => a.User)
                 .FirstOrDefaultAsync(a => a.AccountNumber == accountNumber);
 
             return account?.User != null ? $"{account.User.FirstName} {account.User.LastName}" : null;
         }
-
         public async Task<bool> TransferFundsAsync(string fromAccount, string toAccount, decimal amount, string transactionPin)
         {
             using (var transaction = await _dbContext.Database.BeginTransactionAsync())
@@ -146,29 +173,36 @@ namespace P2PWallet.Services
                     if (user == null || !HashingService.VerifyPin(transactionPin, user.TransactionPinHash, user.PinSalt))
                         throw new InvalidOperationException("Invalid transaction PIN.");
 
+                    // Deduct from sender and add to recipient
                     senderAccount.Balance -= amount;
                     recipientAccount.Balance += amount;
 
+                    // Create transaction for sender
                     var senderTransaction = new Transaction
                     {
                         AccountId = senderAccount.AccountId,
                         AccountNumber = fromAccount,
                         Date = DateTime.UtcNow,
-                        Amount = -amount,
-                        Type = "Debit",
+                        Amount = amount,
+                        Type = TransactionType.Debit,
                         BalanceAfterTransaction = senderAccount.Balance,
-                        Description = $"Transfer to {toAccount}"
+                        Description = $"Transfer to {toAccount}",
+                        Status = "Success",
+                        ExternalTransactionId = GenerateExternalTransactionId()
                     };
 
+                    // Create transaction for recipient
                     var receiverTransaction = new Transaction
                     {
                         AccountId = recipientAccount.AccountId,
                         AccountNumber = toAccount,
                         Date = DateTime.UtcNow,
                         Amount = amount,
-                        Type = "Credit",
+                        Type = TransactionType.Credit,
                         BalanceAfterTransaction = recipientAccount.Balance,
-                        Description = $"Transfer from {fromAccount}"
+                        Description = $"Transfer from {fromAccount}",
+                        Status = "Success",
+                        ExternalTransactionId = GenerateExternalTransactionId()
                     };
 
                     _dbContext.Transactions.Add(senderTransaction);
@@ -184,6 +218,12 @@ namespace P2PWallet.Services
                     throw;
                 }
             }
+        }
+
+        // Helper method to generate an external transaction ID
+        private string GenerateExternalTransactionId()
+        {
+            return Guid.NewGuid().ToString();
         }
 
         public async Task AddBalance(int userId, decimal amount)
@@ -217,6 +257,8 @@ namespace P2PWallet.Services
 
             return accountNumber;
         }
+
+
 
 
         public async Task<LoginResultDto> LoginUserAsync(string username, string password)

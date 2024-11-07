@@ -13,7 +13,7 @@ namespace P2PWallet.Services
     {
         public static (string hash, byte[] salt) HashPassword(string password)
         {
-            // Generate a 128-bit (16-byte) salt using a cryptographically strong random number generator
+            // Generate a 128-bit (16-byte) salt
             byte[] saltBytes = new byte[16];
             using (var rng = RandomNumberGenerator.Create())
             {
@@ -21,7 +21,7 @@ namespace P2PWallet.Services
             }
             string salt = Convert.ToBase64String(saltBytes);
 
-            // Hash the password with the salt using HMAC-SHA-512
+            // Hash the password with the salt
             using (var hmac = new HMACSHA512(saltBytes))
             {
                 byte[] passwordBytes = Encoding.UTF8.GetBytes(password);

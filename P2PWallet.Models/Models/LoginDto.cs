@@ -9,9 +9,4 @@ namespace P2PWallet.Models
         public string Password { get; set; }
     }
 
-    public class InitializeDto
-    {
-        public decimal Amount { get; set; }
-        public string Email { get; set; }
-    }
 }

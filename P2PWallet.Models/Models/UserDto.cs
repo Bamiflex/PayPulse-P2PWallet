@@ -18,5 +18,6 @@ namespace P2PWallet.Models
     public class TransactionPinDto
     {
         public string TransactionPin { get; set; }
+        public string ConfirmTransactionPin { get; set; }
     }
 }

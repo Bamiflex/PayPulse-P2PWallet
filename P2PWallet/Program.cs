@@ -20,11 +20,10 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient<IPaystackService, PaystackService>();
 
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                     .AddUserSecrets<Program>(); // Ensures user secrets are loaded
+                     .AddUserSecrets<Program>();
 
 
 
-// Configure DbContext with connection string
 builder.Services.AddDbContext<P2PWalletDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -100,7 +99,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -113,7 +111,6 @@ if (app.Environment.IsDevelopment())
 app.UseCors("AllowAll");
 app.UseHttpsRedirection();
 
-// Enable authentication and authorization
 app.UseAuthentication();
 
 app.UseRouting();
@@ -121,6 +118,9 @@ app.UseRouting();
 app.UseAuthorization();
 
 app.MapControllers();
+
+//dotnet ef migrations add New --project "C:\Users\bamidelemusibau\source\repos\PayPulse\P2PWallet.Services\P2PWallet.Services.csproj" --startup-project "C:\Users\bamidelemusibau\source\repos\PayPulse\P2PWallet\P2PWallet.Api.csproj"
+
 
 app.Run();
 
