@@ -12,7 +12,7 @@ namespace P2PWallet.Services
         Task<bool> TransferFundsAsync(string fromAccount, string toAccount, decimal amount, string transactionPin);
         Task<decimal> GetBalanceAsync(string accountNumber);
         Task<bool> SetTransactionPinAsync(int userId, string TransactionPin);
-        Task<LoginResultDto> LoginUserAsync(string username, string password);
+        Task<LoginResult> LoginUserAsync(string username, string password);
         Task<string> GetAccountNameByAccountNumberAsync(string accountNumber);
 
         Task CreateTransactionAsync(Transaction transaction);
@@ -26,9 +26,10 @@ namespace P2PWallet.Services
         /// <param name="status">The new status of the transaction.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
         Task UpdateTransactionStatus(string transactionReference, string status);
+        Task<bool> ChangePasswordAsync(int userId, string currentPassword, string newPassword);
+        Task<bool> ChangePinAsync(int userId, string currentPin, string newPin);
+        Task<User> GetUserByIdAsync(int userId);
 
-        //Task<User> GetUserByEmailAsync(string email);
-        //Task UpdateUserAsync(User user);
 
 
     }

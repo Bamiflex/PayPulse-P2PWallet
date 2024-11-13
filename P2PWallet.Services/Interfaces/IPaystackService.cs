@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using P2PWallet.Models;
+using P2PWallet.Models.Dtos;
 
 namespace P2PWallet.Services.Services
     {
@@ -23,9 +25,14 @@ namespace P2PWallet.Services.Services
             /// </summary>
             /// <param name="reference">Unique reference of the transaction to verify.</param>
             /// <returns>True if payment was successful, otherwise false.</returns>
-            Task<(bool isSuccessful, decimal amount)> VerifyPayment(string reference);
+            Task<(bool isSuccessful, decimal amount)> VerifyLastPayment(string reference);
+            Task<Transaction> GetPendingTransactionByUserId(int userId);
+            Task<(bool isSuccessful, decimal amount, string verificationStatus)> VerifyPayment(string reference);
+            Task ProcessTransactionAsync(string reference, string eventType); 
+            bool VerifyPaystackSignature(string jsonPayload, string paystackSignature);
+            bool IsRequestFromAllowedIp(string remoteIp);
 
-            //Task<bool> VerifyPayment(string reference);
-        }
+
+    }
     }
 

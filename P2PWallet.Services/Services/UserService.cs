@@ -258,9 +258,60 @@ namespace P2PWallet.Services
             return accountNumber;
         }
 
+        public async Task<LoginResult> LoginUserAsync(string username, string password)
+        {
+            var user = await _dbContext.Users.Include(u => u.Account)
+                                              .FirstOrDefaultAsync(u => u.Username == username);
+            if (user == null || !PasswordHasher.VerifyPassword(password, user.PasswordHash, Convert.ToBase64String(user.PasswordSalt)))
+            {
+                throw new InvalidOperationException("Invalid username or password.");
+            }
+
+            // Hash the default PIN "0000"
+            var defaultPin = "0000";
+            var (hashedDefaultPin, _) = PasswordHasher.HashPassword(defaultPin); // Get the hash of the default PIN "0000"
+
+            // Check if the user is using the default PIN "0000" by comparing the hash
+            bool needsPin = user.TransactionPinHash == hashedDefaultPin; // True if they use the default PIN
+
+            // Generate token
+            var token = _tokenService.GenerateToken(user);
+
+            return new LoginResult
+            {
+                Token = token,
+                AccountNumber = user.Account.AccountNumber,
+                Balance = user.Account.Balance,
+                NeedsPin = needsPin // Indicate if the user needs to set a new PIN
+            };
+        }
 
 
+        /*
+        public async Task<LoginResult> LoginUserAsync(string username, string password)
+        {
+            var user = await _dbContext.Users.Include(u => u.Account)
+                                              .FirstOrDefaultAsync(u => u.Username == username);
+            if (user == null || !PasswordHasher.VerifyPassword(password, user.PasswordHash, Convert.ToBase64String(user.PasswordSalt)))
+            {
+                throw new InvalidOperationException("Invalid username or password.");
+            }
 
+            // Generate token
+            var token = _tokenService.GenerateToken(user);
+
+            return new LoginResult
+            {
+                Token = token,
+                AccountNumber = user.Account.AccountNumber,
+                Balance = user.Account.Balance,
+                TransactionPinHash = user.TransactionPinHash // Return the PIN hash
+            };
+        }
+        */
+
+
+        /*
         public async Task<LoginResultDto> LoginUserAsync(string username, string password)
         {
             var user = await _dbContext.Users.Include(u => u.Account)
@@ -280,8 +331,9 @@ namespace P2PWallet.Services
                 Balance = user.Account.Balance
             };
         }
+        */
 
-      
+
 
         public static bool VerifyPassword(string password, string hash, string salt)
         {
@@ -293,9 +345,92 @@ namespace P2PWallet.Services
                 byte[] hashBytes = hmac.ComputeHash(passwordBytes);
                 string computedHash = Convert.ToBase64String(hashBytes);
 
-                // Compare the computed hash with the stored hash
                 return computedHash == hash;
             }
+        }
+
+        public async Task<bool> ChangePinAsync(int userId, string currentPin, string newPin)
+        {
+            // Step 1: Retrieve the user
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            // Step 2: Verify the current PIN
+            using (var hmac = new HMACSHA512(user.PinSalt))
+            {
+                var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(currentPin));
+                for (int i = 0; i < computedHash.Length; i++)
+                {
+                    if (computedHash[i] != Convert.FromBase64String(user.TransactionPinHash)[i])
+                    {
+                        throw new Exception("Current PIN is incorrect");
+                    }
+                }
+            }
+
+            // Step 3: Generate a new PIN hash and salt
+            using (var hmac = new HMACSHA512())
+            {
+                user.PinSalt = hmac.Key;
+                var newPinHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(newPin));
+                user.TransactionPinHash = Convert.ToBase64String(newPinHash);  // Convert byte[] to Base64 string
+            }
+
+            // Step 4: Save the changes to the database
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+
+        public async Task<bool> ChangePasswordAsync(int userId, string currentPassword, string newPassword)
+        {
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            // Verify the current password
+            using (var hmac = new HMACSHA512(user.PasswordSalt))
+            {
+                var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(currentPassword));
+                var computedHashString = Convert.ToBase64String(computedHash); // Convert to string for comparison
+
+                if (computedHashString != user.PasswordHash)
+                {
+                    throw new Exception("Current password is incorrect");
+                }
+            }
+
+            // Hash the new password and convert to a string
+            using (var hmac = new HMACSHA512())
+            {
+                user.PasswordSalt = hmac.Key;
+                var newHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(newPassword));
+                user.PasswordHash = Convert.ToBase64String(newHash); // Convert to string for storage
+            }
+
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<User> GetUserByIdAsync(int userId)
+        {
+            var user = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            return user;
         }
 
     }

@@ -34,7 +34,8 @@ namespace P2PWallet.Services
         new Claim(JwtRegisteredClaimNames.Sub, user.Username),
         new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         new Claim("UserId", user.Id.ToString()),
-        new Claim("AccountNumber", accountNumber ?? string.Empty)
+        new Claim("AccountNumber", accountNumber ?? string.Empty),
+        new Claim(JwtRegisteredClaimNames.Email, user.Email)
     };
 
             var token = new JwtSecurityToken(

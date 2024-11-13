@@ -10,11 +10,11 @@ namespace P2PWallet.Models.Models
 {
     public class PaystackVerificationResponse
     {
-        public string status { get; set; }
+        public bool status { get; set; }
         public string message { get; set; }
-        public Data data { get; set; }
+        public PaystackTransactionData data { get; set; }
 
-        public class Data
+        public class PaystackTransactionData
         {
             public string status { get; set; }
             public decimal amount { get; set; }
@@ -26,8 +26,6 @@ namespace P2PWallet.Models.Models
 
         public class InitializePaymentRequest
         {
-            [Required]
-            public string Email { get; set; }
 
             [Required]
             [Range(1, double.MaxValue, ErrorMessage = "Amount must be greater than zero.")]
@@ -49,7 +47,7 @@ namespace P2PWallet.Models.Models
             public decimal Amount { get; set; }
             public string PaymentStatus { get; set; }
         }
-
+        
     }
 
 }
