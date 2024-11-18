@@ -26,9 +26,10 @@ namespace P2PWallet.Services.Services
         private readonly P2PWalletDbContext _dbContext;
         private readonly IConfiguration _configuration;
         private readonly ILogger<PaystackService> _logger;
+        private readonly IUserService _userService;
 
 
-        public PaystackService(HttpClient httpClient, IConfiguration configuration, P2PWalletDbContext dbContext, ILogger<PaystackService> logger)
+        public PaystackService(HttpClient httpClient, IConfiguration configuration, P2PWalletDbContext dbContext, ILogger<PaystackService> logger, IUserService userService)
         {
             _httpClient = httpClient;
             _paystackSecretKey = configuration["Paystack:SecretKey"];
@@ -36,7 +37,9 @@ namespace P2PWallet.Services.Services
             _dbContext = dbContext;
             _configuration = configuration;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        }
+            _userService = userService ?? throw new ArgumentNullException(nameof(userService));
+        
+    }
 
 
         public async Task<string> InitializePayment(decimal amount, string email, string reference)
@@ -61,10 +64,25 @@ namespace P2PWallet.Services.Services
             var responseContent = await response.Content.ReadAsStringAsync();
             var jsonResponse = JsonConvert.DeserializeObject<PaystackVerificationResponse>(responseContent);
 
-
             if (jsonResponse != null && jsonResponse.status)
             {
                 var paymentUrl = jsonResponse.data?.authorization_url;
+
+                // Add a pending ledger entry
+                var ledgerEntry = new GeneralLedger
+                {
+                    AccountId = GetAccountIdByEmail(email), // Fetch account ID by email
+                    Date = DateTime.UtcNow,
+                    Description = "Paystack Payment Initialization",
+                    Amount = amount,
+                    Type = "Credit",
+                    RunningBalance = 0, // To be updated upon confirmation
+                    reference = reference
+                };
+
+                _dbContext.GeneralLedgers.Add(ledgerEntry);
+                await _dbContext.SaveChangesAsync();
+
                 return paymentUrl ?? throw new Exception("Payment URL not found in response.");
             }
             else
@@ -72,86 +90,110 @@ namespace P2PWallet.Services.Services
                 throw new Exception($"Error from Paystack: {jsonResponse?.message}");
             }
         }
+
+        public int GetAccountIdByEmail(string email)
+        {
+            var user = _dbContext.Users.FirstOrDefault(u => u.Email == email);
+            if (user == null)
+                throw new Exception($"User with email {email} not found.");
+
+            var account = _dbContext.Accounts.FirstOrDefault(a => a.UserId == user.Id);
+            if (account == null)
+                throw new Exception($"Account for user {email} not found.");
+
+            return account.AccountId;// Replace with appropriate field
+        }
+
         public bool IsRequestFromAllowedIp(string remoteIp)
         {
+
             var allowedIps = _configuration.GetSection("Paystack:AllowedIPs").Get<string[]>();
+            // Allow local IPs for testing purposes only in development
+            if (remoteIp == "::1" || remoteIp == "127.0.0.1")
+            {
+                return true;
+            }
+
             return allowedIps.Contains(remoteIp);
         }
 
-        public async Task ProcessTransactionAsync(string reference, string eventType)
+        public async Task<bool> ProcessTransactionAsync(string reference, string eventType, decimal amountReceived)
         {
-            // Ensure the event type is "charge.success" before processing
             if (eventType != "charge.success")
             {
                 _logger.LogError("Event type is not 'charge.success'. Ignoring transaction.");
-                Console.WriteLine("Event type is not 'charge.success'. Ignoring...");
-                return;
+                return false;
             }
 
             try
             {
-                // Retrieve the transaction from the database based on the reference
                 var transaction = await _dbContext.Transactions
                     .FirstOrDefaultAsync(t => t.ExternalTransactionId == reference);
 
                 if (transaction == null)
                 {
-                    Console.WriteLine($"Transaction with reference {reference} not found.");
-                    return;
+                    _logger.LogWarning($"Transaction with reference {reference} not found.");
+                    return false;
                 }
 
-                // Check if the transaction status is already updated to "Success"
-                if (transaction.Status == "Success")
+                if (transaction.Amount != amountReceived || transaction.Status == "Success")
                 {
-                    Console.WriteLine($"Transaction with reference {reference} is already marked as successful.");
-                    return;
+                    _logger.LogWarning($"Transaction {reference} is invalid or already processed.");
+                    return false;
                 }
 
-
-                transaction.Status = "Success";
-
-                // Assuming transaction.Amount was already set and represents the amount in kobo
-                transaction.BalanceAfterTransaction += transaction.Amount;
-
-                // Fetch the associated account
                 var account = await _dbContext.Accounts.FindAsync(transaction.AccountId);
                 if (account == null)
                 {
-                    Console.WriteLine($"Account with ID {transaction.AccountId} not found for transaction {reference}.");
-                    return;
+                    _logger.LogWarning($"Account not found for transaction {reference}.");
+                    return false;
                 }
 
-                // Update the account balance
-                account.Balance += transaction.Amount;
-
-
-                using (var dbContextTransaction = await _dbContext.Database.BeginTransactionAsync())
+                using (var dbTransaction = await _dbContext.Database.BeginTransactionAsync())
                 {
                     try
                     {
+                        // Update transaction status and account balance
+                        transaction.Status = "Success";
+                        transaction.BalanceAfterTransaction = account.Balance + transaction.Amount;
+                        account.Balance += transaction.Amount;
+
+                        // Create a General Ledger entry for successful payment
+                        var ledgerEntry = new GeneralLedger
+                        {
+                            AccountId = account.AccountId,
+                            Date = DateTime.UtcNow,
+                            Description = "Paystack Payment Successful",
+                            Amount = transaction.Amount,
+                            Type = "Credit",
+                            RunningBalance = account.Balance,
+                            reference = reference
+                        };
+
+                        _dbContext.GeneralLedgers.Add(ledgerEntry);
                         _dbContext.Transactions.Update(transaction);
                         _dbContext.Accounts.Update(account);
+
                         await _dbContext.SaveChangesAsync();
+                        await dbTransaction.CommitAsync();
 
-
-                        await dbContextTransaction.CommitAsync();
-                        Console.WriteLine($"Transaction and account balance updated successfully for reference {reference}.");
+                        return true;
                     }
                     catch (Exception ex)
                     {
-
-                        await dbContextTransaction.RollbackAsync();
-                        _logger.LogError(ex, $"Error updating transaction or account balance for reference {reference}.");
-                        Console.WriteLine($"Error updating transaction or account balance: {ex.Message}");
+                        await dbTransaction.RollbackAsync();
+                        _logger.LogError(ex, $"Error processing transaction {reference}.");
+                        return false;
                     }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error in ProcessTransactionAsync.");
-                Console.WriteLine($"An unexpected error occurred in ProcessTransactionAsync: {ex.Message}");
+                return false;
             }
         }
+
 
 
         public bool VerifyPaystackSignature(string jsonPayload, string paystackSignature)
@@ -162,14 +204,14 @@ namespace P2PWallet.Services.Services
                 throw new ArgumentNullException(nameof(jsonPayload), "Payload cannot be null or empty");
             }
 
-            /*
+            
 
             if (string.IsNullOrEmpty(paystackSignature))
             {
                 _logger.LogError("paystackSignature is null or empty in VerifyPaystackSignature");
                 throw new ArgumentNullException(nameof(paystackSignature), "Signature cannot be null or empty");
             }
-            */
+            
 
             try
             {
@@ -227,6 +269,7 @@ namespace P2PWallet.Services.Services
             if (jsonResponse != null && jsonResponse.status) 
             {
                 decimal amount = jsonResponse.data?.amount ?? 0;
+
                 string verificationStatus = jsonResponse.data?.status ?? "Failed";
 
                 return (true, amount, verificationStatus);

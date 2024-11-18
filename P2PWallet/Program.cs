@@ -119,7 +119,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-//dotnet ef migrations add New --project "C:\Users\bamidelemusibau\source\repos\PayPulse\P2PWallet.Services\P2PWallet.Services.csproj" --startup-project "C:\Users\bamidelemusibau\source\repos\PayPulse\P2PWallet\P2PWallet.Api.csproj"
+//dotnet ef migrations add generalLedger --project "C:\Users\bamidelemusibau\source\repos\PayPulse\P2PWallet.Services\P2PWallet.Services.csproj" --startup-project "C:\Users\bamidelemusibau\source\repos\PayPulse\P2PWallet\P2PWallet.Api.csproj"
 
 
 app.Run();

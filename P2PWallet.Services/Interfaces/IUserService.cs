@@ -29,6 +29,8 @@ namespace P2PWallet.Services
         Task<bool> ChangePasswordAsync(int userId, string currentPassword, string newPassword);
         Task<bool> ChangePinAsync(int userId, string currentPin, string newPin);
         Task<User> GetUserByIdAsync(int userId);
+        Task<List<Transaction>> GetCreditTransactionsAsync(int userId);
+        Task<List<Transaction>> GetDebitTransactionsAsync(int userId);
 
 
 

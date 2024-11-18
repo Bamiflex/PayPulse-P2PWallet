@@ -1,6 +1,7 @@
 ﻿
 using P2PWallet.Models;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace P2PWallet.Models
 {
@@ -17,6 +18,15 @@ namespace P2PWallet.Models
         public byte[] PasswordSalt { get; set; }
         public string TransactionPinHash { get; set; }
         public byte[] PinSalt { get; set; }
+        
+        private bool isDefaultPin;
+
+        [Column("IsDefaultPin")]
+        public bool IsDefaultPin
+        {
+            get => isDefaultPin == false; // Treat `false` (0) as true
+            set => isDefaultPin = !value; // Invert the value before storing it
+        }
 
 
         // Navigation property to link User with Account

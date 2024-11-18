@@ -28,9 +28,11 @@ namespace P2PWallet.Services.Services
             Task<(bool isSuccessful, decimal amount)> VerifyLastPayment(string reference);
             Task<Transaction> GetPendingTransactionByUserId(int userId);
             Task<(bool isSuccessful, decimal amount, string verificationStatus)> VerifyPayment(string reference);
-            Task ProcessTransactionAsync(string reference, string eventType); 
+
+            Task<bool> ProcessTransactionAsync(string reference, string eventType, decimal amountReceived);
             bool VerifyPaystackSignature(string jsonPayload, string paystackSignature);
             bool IsRequestFromAllowedIp(string remoteIp);
+            int GetAccountIdByEmail(string email);
 
 
     }

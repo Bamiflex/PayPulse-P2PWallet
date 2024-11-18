@@ -60,7 +60,8 @@ namespace P2PWallet.Services
                 PasswordHash = passwordHash,
                 PasswordSalt = passwordSalt,
                 PinSalt = pinSalt, 
-                TransactionPinHash = transactionPinHash 
+                TransactionPinHash = transactionPinHash,
+                IsDefaultPin = true
             };
 
             _dbContext.Users.Add(user);
@@ -114,7 +115,7 @@ namespace P2PWallet.Services
             var account = new Account
             {
                 AccountNumber = accountNumber,
-                Balance = 10000M,
+                Balance = 0M,
                 Currency = "NGN",
                 UserId = userId
             };
@@ -125,9 +126,8 @@ namespace P2PWallet.Services
             return account;
         }
 
+        
         public async Task<bool> SetTransactionPinAsync(int userId, string transactionPin)
-
-
         {
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
@@ -135,13 +135,22 @@ namespace P2PWallet.Services
                 throw new InvalidOperationException("User not found.");
             }
 
+            // Hash the provided transaction PIN
             var (hashedPin, salt) = HashingService.HashPin(transactionPin);
             user.TransactionPinHash = hashedPin;
             user.PinSalt = salt;
 
+            user.IsDefaultPin = false;
+
+            Console.WriteLine($"IsDefaultPin before save: {user.IsDefaultPin}");
+
+            // Save changes to the database
             await _dbContext.SaveChangesAsync();
+
             return true;
         }
+
+       
 
 
         public async Task<string> GetAccountNameByAccountNumberAsync(string accountNumber)
@@ -267,12 +276,8 @@ namespace P2PWallet.Services
                 throw new InvalidOperationException("Invalid username or password.");
             }
 
-            // Hash the default PIN "0000"
-            var defaultPin = "0000";
-            var (hashedDefaultPin, _) = PasswordHasher.HashPassword(defaultPin); // Get the hash of the default PIN "0000"
-
-            // Check if the user is using the default PIN "0000" by comparing the hash
-            bool needsPin = user.TransactionPinHash == hashedDefaultPin; // True if they use the default PIN
+            // Check if the user needs to set a new PIN based on IsDefaultPin
+            bool needsPin = user.IsDefaultPin;
 
             // Generate token
             var token = _tokenService.GenerateToken(user);
@@ -282,57 +287,9 @@ namespace P2PWallet.Services
                 Token = token,
                 AccountNumber = user.Account.AccountNumber,
                 Balance = user.Account.Balance,
-                NeedsPin = needsPin // Indicate if the user needs to set a new PIN
+                NeedsPin = needsPin
             };
         }
-
-
-        /*
-        public async Task<LoginResult> LoginUserAsync(string username, string password)
-        {
-            var user = await _dbContext.Users.Include(u => u.Account)
-                                              .FirstOrDefaultAsync(u => u.Username == username);
-            if (user == null || !PasswordHasher.VerifyPassword(password, user.PasswordHash, Convert.ToBase64String(user.PasswordSalt)))
-            {
-                throw new InvalidOperationException("Invalid username or password.");
-            }
-
-            // Generate token
-            var token = _tokenService.GenerateToken(user);
-
-            return new LoginResult
-            {
-                Token = token,
-                AccountNumber = user.Account.AccountNumber,
-                Balance = user.Account.Balance,
-                TransactionPinHash = user.TransactionPinHash // Return the PIN hash
-            };
-        }
-        */
-
-
-        /*
-        public async Task<LoginResultDto> LoginUserAsync(string username, string password)
-        {
-            var user = await _dbContext.Users.Include(u => u.Account)
-                                              .FirstOrDefaultAsync(u => u.Username == username);
-                if (user == null || !PasswordHasher.VerifyPassword(password, user.PasswordHash, Convert.ToBase64String(user.PasswordSalt)))
-            {
-                throw new InvalidOperationException("Invalid username or password.");
-            }
-
-            var token = _tokenService.GenerateToken(user);
-
-
-            return new LoginResultDto
-            {
-                Token = token,
-                AccountNumber = user.Account.AccountNumber,
-                Balance = user.Account.Balance
-            };
-        }
-        */
-
 
 
         public static bool VerifyPassword(string password, string hash, string salt)
@@ -385,6 +342,22 @@ namespace P2PWallet.Services
             return true;
         }
 
+        public async Task<List<Transaction>> GetCreditTransactionsAsync(int userId)
+        {
+            return await _context.Transactions
+                                 .Where(t => t.AccountId == userId && t.Type == TransactionType.Credit)
+                                 .OrderByDescending(t => t.Date)
+                                 .ToListAsync();
+        }
+
+        public async Task<List<Transaction>> GetDebitTransactionsAsync(int userId)
+        {
+            return await _context.Transactions
+                                 .Where(t => t.AccountId == userId && t.Type == TransactionType.Debit)
+                                 .OrderByDescending(t => t.Date)
+                                 .ToListAsync();
+        }
+
 
         public async Task<bool> ChangePasswordAsync(int userId, string currentPassword, string newPassword)
         {
@@ -418,20 +391,25 @@ namespace P2PWallet.Services
             await _context.SaveChangesAsync();
             return true;
         }
-
         public async Task<User> GetUserByIdAsync(int userId)
         {
+            if (userId <= 0)
+            {
+                throw new ArgumentException("Invalid user ID provided.");
+            }
+
             var user = await _context.Users
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Id == userId);
 
             if (user == null)
             {
-                throw new Exception("User not found");
+                throw new KeyNotFoundException("User not found.");
             }
 
             return user;
         }
+
 
     }
 }

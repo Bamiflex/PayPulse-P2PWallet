@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace P2PWallet.Controllers
 {
@@ -27,9 +28,9 @@ namespace P2PWallet.Controllers
         }
 
 
-       
 
-    private string GetAccountNumberFromToken()
+
+        private string GetAccountNumberFromToken()
         {
             var token = HttpContext.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -157,6 +158,71 @@ namespace P2PWallet.Controllers
             }
 
             return Ok(new { status = true, statusMessage = "Account found.", data = accountName });
+        }
+
+
+        [Authorize]
+        [HttpGet("credits")]
+        public async Task<IActionResult> GetCreditTransactions()
+        {
+            int? userId = GetUserIdFromToken();
+
+            if (userId == null)
+            {
+                return BadRequest("Invalid user ID in token.");
+            }
+
+            var creditTransactions = await _userService.GetCreditTransactionsAsync(userId.Value);
+
+            return Ok(new
+            {
+                status = true,
+                statusMessage = "Credit transactions retrieved successfully.",
+                data = creditTransactions
+            });
+        }
+
+        [Authorize]
+        [HttpGet("debits")]
+        public async Task<IActionResult> GetDebitTransactions()
+        {
+            int? userId = GetUserIdFromToken();
+
+            if (userId == null)
+            {
+                return BadRequest("Invalid user ID in token.");
+            }
+
+            var debitTransactions = await _userService.GetDebitTransactionsAsync(userId.Value);
+
+            return Ok(new
+            {
+                status = true,
+                statusMessage = "Debit transactions retrieved successfully.",
+                data = debitTransactions
+            });
+        }
+
+
+        [NonAction]
+        private int? GetUserIdFromToken()
+        {
+            // Retrieve the "UserId" claim from the token
+            var userIdString = User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value;
+
+            if (string.IsNullOrEmpty(userIdString))
+            {
+                // Log or throw an exception if the user ID is not found in the token
+                throw new InvalidOperationException("User ID not found in token.");
+            }
+
+            if (int.TryParse(userIdString, out int userId))
+            {
+                return userId;
+            }
+
+            // Log error if needed, and throw an exception if parsing fails
+            throw new InvalidOperationException("User ID in token is invalid.");
         }
 
 

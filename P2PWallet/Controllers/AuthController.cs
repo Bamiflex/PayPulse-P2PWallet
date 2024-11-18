@@ -45,42 +45,6 @@ namespace P2PWallet.Controllers
             }
         }
 
-        /*
-        [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
-        {
-            if (loginDto == null || string.IsNullOrEmpty(loginDto.Username) || string.IsNullOrEmpty(loginDto.Password))
-            {
-                return BadRequest(new ApiResponse<string>(false, "Invalid Login Data", null));
-            }
-
-            try
-            {
-                var loginResult = await _userService.LoginUserAsync(loginDto.Username, loginDto.Password);
-
-                var responseData = new
-                {
-                    token = loginResult.Token,
-                    accountNumber = loginResult.AccountNumber,
-                    balance = loginResult.Balance
-                };
-
-                return Ok(new ApiResponse<object>(true, "Login successful", responseData));
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogWarning(ex, "Login failed for user: {Username}", loginDto.Username);
-                return Unauthorized(new ApiResponse<string>(false, ex.Message, null));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "An unexpected error occurred during login.");
-                return StatusCode(500, new ApiResponse<string>(false, "An error occurred during login", null));
-            }
-        }
-
-        */
-
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
         {
@@ -103,7 +67,7 @@ namespace P2PWallet.Controllers
                     token = loginResult.Token,
                     accountNumber = loginResult.AccountNumber,
                     balance = loginResult.Balance,
-                    needsPin = needsPin  // This flag tells the frontend if the user needs to set a PIN
+                    needsPin = loginResult.NeedsPin  // This flag tells the frontend if the user needs to set a PIN
                 };
 
                 return Ok(new ApiResponse<object>(true, "Login successful", responseData));

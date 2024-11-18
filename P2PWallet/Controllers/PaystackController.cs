@@ -1,194 +1,198 @@
 ﻿
-using Microsoft.AspNetCore.Mvc;
-using P2PWallet.Services;
-using P2PWallet.Services.Services;
-using System;
-using System.Threading.Tasks;
-using P2PWallet.Models;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
-using static P2PWallet.Models.Models.PaystackVerificationResponse;
-using P2PWallet.Models.Dtos;
-using Newtonsoft.Json;
-using System.Security.Claims;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
+    using Microsoft.AspNetCore.Mvc;
+    using P2PWallet.Services;
+    using P2PWallet.Services.Services;
+    using System;
+    using System.Threading.Tasks;
+    using P2PWallet.Models;
+    using Microsoft.AspNetCore.Authorization;
+    using Microsoft.EntityFrameworkCore;
+    using static P2PWallet.Models.Models.PaystackVerificationResponse;
+    using P2PWallet.Models.Dtos;
+    using Newtonsoft.Json;
+    using System.Security.Claims;
+    using System.IdentityModel.Tokens.Jwt;
+    using System.Security.Cryptography;
+    using System.Text;
+    using System.Text.Json;
 
 
-namespace P2PWallet.Api.Controllers
-{
-    [Route("api/[controller]")]
-    [ApiController]
-    public class PaystackController : ControllerBase
+    namespace P2PWallet.Api.Controllers
     {
-        private readonly IPaystackService _paystackService;
-        private readonly IUserService _userService;
-        private readonly ILogger<PaystackController> _logger;
-
-        public PaystackController(IPaystackService paystackService, IUserService userService, ILogger<PaystackController> logger)
+        [Route("api/[controller]")]
+        [ApiController]
+        public class PaystackController : ControllerBase
         {
-            _paystackService = paystackService;
-            _userService = userService;
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        }
+            private readonly IPaystackService _paystackService;
+            private readonly IUserService _userService;
+            private readonly ILogger<PaystackController> _logger;
 
-        private int GetUserIdFromToken()
-        {
-            var userIdClaim = User.FindFirst("UserId")?.Value;
-            return int.TryParse(userIdClaim, out var userId) ? userId : 0;
-        }
-
-        private string GetAccountNumberFromToken()
-        {
-            var accountNumberClaim = User.FindFirst("AccountNumber")?.Value;
-            return accountNumberClaim;
-        }
-
-        private string GetEmailFromToken()
-        {
-            var emailClaim = HttpContext.User.FindFirst(ClaimTypes.Email)
-                             ?? HttpContext.User.FindFirst(JwtRegisteredClaimNames.Email);
-
-            return emailClaim?.Value;
-        }
-
-        [Authorize]
-        [HttpPost("initialize")]
-        public async Task<IActionResult> InitializePayment([FromBody] InitializePaymentRequest initializePaymentRequest)
-        {
-            if (initializePaymentRequest == null || initializePaymentRequest.Amount <= 0)
+            public PaystackController(IPaystackService paystackService, IUserService userService, ILogger<PaystackController> logger)
             {
-                return BadRequest(new
+                _paystackService = paystackService;
+                _userService = userService;
+                _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            }
+
+            private int GetUserIdFromToken()
+            {
+                var userIdClaim = User.FindFirst("UserId")?.Value;
+                return int.TryParse(userIdClaim, out var userId) ? userId : 0;
+            }
+
+            private string GetAccountNumberFromToken()
+            {
+                var accountNumberClaim = User.FindFirst("AccountNumber")?.Value;
+                return accountNumberClaim;
+            }
+
+            private string GetEmailFromToken()
+            {
+                var emailClaim = HttpContext.User.FindFirst(ClaimTypes.Email)
+                                 ?? HttpContext.User.FindFirst(JwtRegisteredClaimNames.Email);
+
+                return emailClaim?.Value;
+            }
+
+
+            [Authorize]
+            [HttpPost("initialize")]
+            public async Task<IActionResult> InitializePayment([FromBody] InitializePaymentRequest initializePaymentRequest)
+            {
+                if (initializePaymentRequest == null || initializePaymentRequest.Amount <= 0)
                 {
-                    status = false,
-                    statusMessage = "Invalid input parameters.",
-                    data = new { }
-                });
-            }
-
-            try
-            {
-
-                var reference = Guid.NewGuid().ToString();
-
-
-                var email = GetEmailFromToken();
-
-
-                var paymentUrl = await _paystackService.InitializePayment(initializePaymentRequest.Amount, email, reference);
-
-
-                var accountNumber = GetAccountNumberFromToken();
-                var userId = GetUserIdFromToken();
-
-                // Create a transaction record
-                var transaction = new Transaction
-                {
-                    AccountNumber = accountNumber,
-                    Date = DateTime.UtcNow,
-                    Amount = initializePaymentRequest.Amount,
-                    Type = TransactionType.Credit,
-                    BalanceAfterTransaction = 0,
-                    Description = "Paystack AddMoney",
-                    Status = "Pending",
-                    ExternalTransactionId = reference,
-                    AccountId = userId
-                };
-
-                await _userService.CreateTransactionAsync(transaction);
-
-                return Ok(new
-                {
-                    status = true,
-                    statusMessage = "Payment initialization successful.",
-                    data = new { paymentUrl, reference }
-                });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new
-                {
-                    status = false,
-                    statusMessage = $"Failed to initialize payment: {ex.Message}",
-                    data = new { }
-                });
-            }
-        }
-
-
-        [HttpPost("webhook")]
-        public async Task<IActionResult> Webhook()
-        {
-            string jsonPayload;
-
-            // Read the raw JSON payload from the request body
-            using (var reader = new StreamReader(Request.Body))
-            {
-                jsonPayload = await reader.ReadToEndAsync();
-            }
-
-            if (string.IsNullOrEmpty(jsonPayload))
-            {
-                _logger.LogError("Received empty payload from Paystack");
-                return BadRequest("Invalid payload received");
-                Console.WriteLine(jsonPayload);
-            }
-
-            // Log the received payload
-            _logger.LogInformation("Received payload: {Payload}", jsonPayload);
-            
-            // Retrieve the Paystack signature from headers
-            if (!Request.Headers.TryGetValue("X-Paystack-Signature", out var paystackSignature) || string.IsNullOrEmpty(paystackSignature))
-            {
-                _logger.LogError("Paystack signature missing from headers");
-                return BadRequest("Signature is required");
-            }
-
-            
-            // Verify the Paystack signature
-            bool isValid = _paystackService.VerifyPaystackSignature(jsonPayload, paystackSignature);
-            if (!isValid)
-            {
-                _logger.LogWarning("Invalid Paystack signature");
-                return Unauthorized("Invalid signature");
-            }
-
-
-
-            string reference = null;
-            string eventType = null;
-
-            using (JsonDocument doc = JsonDocument.Parse(jsonPayload))
-            {
-                var root = doc.RootElement;
-
-                if (root.TryGetProperty("data", out var dataElement) && dataElement.TryGetProperty("reference", out var referenceElement))
-                {
-                    reference = referenceElement.GetString();
+                    return BadRequest(new
+                    {
+                        status = false,
+                        statusMessage = "Invalid input parameters.",
+                        data = new { }
+                    });
                 }
 
-                if (root.TryGetProperty("event", out var eventElement))
+                try
                 {
-                    eventType = eventElement.GetString();
+
+                    var reference = Guid.NewGuid().ToString();
+
+
+                    var email = GetEmailFromToken();
+
+
+                    var paymentUrl = await _paystackService.InitializePayment(initializePaymentRequest.Amount, email, reference);
+
+
+                    var accountNumber = GetAccountNumberFromToken();
+                    var userId = GetUserIdFromToken();
+
+                    // Create a transaction record
+                    var transaction = new Transaction
+                    {
+                        AccountNumber = accountNumber,
+                        Date = DateTime.UtcNow,
+                        Amount = initializePaymentRequest.Amount,
+                        Type = TransactionType.Credit,
+                        BalanceAfterTransaction = 0,
+                        Description = "Paystack Deposit",
+                        Status = "Pending",
+                        ExternalTransactionId = reference,
+                        AccountId = userId
+                    };
+
+                    await _userService.CreateTransactionAsync(transaction);
+
+                    return Ok(new
+                    {
+                        status = true,
+                        statusMessage = "Payment initialization successful.",
+                        data = new { paymentUrl, reference, email }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    return BadRequest(new
+                    {
+                        status = false,
+                        statusMessage = $"Failed to initialize payment: {ex.Message}",
+                        data = new { }
+                    });
                 }
             }
 
-            if (reference == null || eventType == null)
+            [HttpPost("webhook")]
+            public async Task<IActionResult> Webhook()
             {
-                _logger.LogError("Required fields 'reference' or 'event' are missing in the payload");
-                return BadRequest("Invalid payload format");
+                string jsonPayload;
+
+                // Read the raw JSON payload from the request body
+                using (var reader = new StreamReader(Request.Body))
+                {
+                    jsonPayload = await reader.ReadToEndAsync();
+                }
+
+                if (string.IsNullOrEmpty(jsonPayload))
+                {
+                    _logger.LogError("Received empty payload from Paystack");
+                    return BadRequest("Invalid payload received");
+                }
+
+                // Retrieve and validate Paystack signature
+                if (!Request.Headers.TryGetValue("X-Paystack-Signature", out var paystackSignature) || string.IsNullOrEmpty(paystackSignature))
+                {
+                    _logger.LogError("Paystack signature missing from headers");
+                    return BadRequest("Signature is required");
+                }
+
+                if (!_paystackService.VerifyPaystackSignature(jsonPayload, paystackSignature))
+                {
+                    _logger.LogWarning("Invalid Paystack signature");
+                    return Unauthorized("Invalid signature");
+                }
+
+                // Check if request is from an allowed IP
+                var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+                if (string.IsNullOrEmpty(remoteIp) || !_paystackService.IsRequestFromAllowedIp(remoteIp))
+                {
+                    _logger.LogWarning("Request from unauthorized IP: {RemoteIp}", remoteIp);
+                    return Unauthorized("IP address not allowed");
+                }
+
+                string reference = null;
+                string eventType = null;
+                decimal amountReceived = 0;
+
+                // Parse the JSON payload to extract details
+                using (JsonDocument doc = JsonDocument.Parse(jsonPayload))
+                {
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("data", out var dataElement))
+                    {
+                        if (dataElement.TryGetProperty("reference", out var referenceElement))
+                        {
+                            reference = referenceElement.GetString();
+                        }
+                        if (dataElement.TryGetProperty("amount", out var amountElement))
+                        {
+                            amountReceived = amountElement.GetDecimal() / 100; // Convert from kobo to Naira
+                        }
+                    }
+                    if (root.TryGetProperty("event", out var eventElement))
+                    {
+                        eventType = eventElement.GetString();
+                    }
+                }
+
+                // Process the transaction and check the result
+                var success = await _paystackService.ProcessTransactionAsync(reference, eventType, amountReceived);
+
+                if (!success)
+                {
+                    _logger.LogWarning("Transaction validation or processing failed for reference {Reference}", reference);
+                    return BadRequest("Transaction validation or processing failed");
+                }
+
+                _logger.LogInformation("Webhook processed successfully for reference {Reference}", reference);
+                return Ok();
             }
-
-            _logger.LogInformation("Event: {EventType}, Reference: {Reference}", eventType, reference);
-
-            // Process the transaction based on reference and event type
-            await _paystackService.ProcessTransactionAsync(reference, eventType);
-
-            _logger.LogInformation("Webhook processed successfully");
-            return Ok();
-        }
 
 
 

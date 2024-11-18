@@ -13,5 +13,7 @@ namespace P2PWallet.Services
         public DbSet<Transaction> Transactions { get; set; }
 
         public P2PWalletDbContext(DbContextOptions<P2PWalletDbContext> options) : base(options) { }
+        public DbSet<GeneralLedger> GeneralLedgers { get; set; }
+
     }
 }
